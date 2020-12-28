@@ -6,34 +6,46 @@ import * as url from 'url';
 
 const server = http.createServer();
 const publicDir = p.resolve(__dirname, 'public');
+let cacheAge = 3600 * 24 * 365;
+
+
 server.on('request', (request: IncomingMessage, response: ServerResponse) => {
   const {method, url: path, headers} = request;
-  const {pathname, search} = url.parse(path);
-  switch (pathname) {
-    case '/index.html':
-      fs.readFile(p.resolve(publicDir, 'index.html'), (error, data) => {
-        if (error) throw error;
-        response.end(data.toString());
-      });
-      break;
-    case '/style.css':
-      response.setHeader('Content-Type', 'text/css; charset=utf-8');
-      fs.readFile(p.resolve(publicDir, 'style.css'), (error, data) => {
-        if (error) throw error;
-        response.end(data.toString());
-      });
-      break;
-    case '/main.js':
-      response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
-      fs.readFile(p.resolve(publicDir, 'main.js'), (error, data) => {
-        if (error) throw error;
-        response.end(data.toString());
-      });
-      break;
-    default:
-      response.statusCode = 404;
-      response.end();
+  // 处理非GET请求
+  if (method !== 'GET') {
+    response.statusCode = 405;
+    response.setHeader('Content-Type', 'text/html;charset=utf-8');
+    response.end('这是一个假响应');
+    return;
   }
+
+  const {pathname, search} = url.parse(path);
+  let fileName = pathname.substr(1);
+  if (fileName === '') {
+    fileName = 'index.html';
+  }
+  fs.readFile(p.resolve(publicDir, fileName), (error, data) => {
+    if (error) {
+      if (error.errno === -4058) {
+        response.statusCode = 404;
+        fs.readFile(p.resolve(publicDir, '404.html'), (error, data) => {
+          response.end(data);
+        });
+      } else if (error.errno === -4068) {
+        response.statusCode = 403;
+        response.setHeader('Content-Type', 'text/html;charset=utf-8');
+        response.end('无权查看目录内容');
+      } else {
+        response.statusCode = 500;
+        response.setHeader('Content-Type', 'text/html;charset=utf-8');
+        response.end('服务器繁忙，请稍后再试');
+      }
+    } else {
+      // 返回文件内容
+      response.setHeader('Cache-Control', `public, max-age=${cacheAge}`);//缓存
+      response.end(data);
+    }
+  });
 });
 
 server.listen(8888);
